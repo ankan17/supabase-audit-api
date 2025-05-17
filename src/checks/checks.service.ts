@@ -64,62 +64,81 @@ export const getRlsData = async (orgId: string, accessToken: string) => {
     logline: `Found ${projects.length} projects in org ${orgId}. Will check row-level security for every table in each project.`,
   });
 
-  // Sequentially fetch the backup history for each project
-  // It is intentionally done this way to avoid rate limiting
-  const rlsData = await Promise.all(
-    projects.map(async (project: { id: string }) => {
-      try {
-        logs.push({
-          timestamp: new Date(),
-          logGroup: 'rls',
-          logline: `Started processing tables for project ${project.id}`,
-        });
-
-        const data = {
-          query:
-            "SELECT n.nspname AS schema, c.relname AS table_name, c.relrowsecurity AS rls_enabled FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r';",
-        };
-
-        const { data: tablesData } = await axios.post<
-          {
-            table_name: string;
-            schema: string;
-            rls_enabled: boolean;
-          }[]
-        >(`https://api.supabase.com/v1/projects/${project.id}/database/query`, data, {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-        logs.push({
-          timestamp: new Date(),
-          logGroup: 'rls',
-          logline: `Found ${tablesData.length} tables in project: ${project.id}`,
-        });
-        tablesData.forEach(
-          (table: { table_name: string; schema: string; rls_enabled: boolean }) => {
-            logs.push({
-              timestamp: new Date(),
-              logGroup: 'rls',
-              logline: `Status of RLS for table ${table.table_name} in schema ${table.schema}: ${table.rls_enabled ? 'Enabled' : 'Disabled'}`,
-            });
-          },
-        );
-        return tablesData.map(
-          (table: { table_name: string; schema: string; rls_enabled: boolean }) => ({
-            projectId: project.id,
-            tableName: table.table_name,
-            schema: table.schema,
-            rlsEnabled: table.rls_enabled,
-          }),
-        );
-      } catch (err) {
-        console.error(err);
-        throw new InternalServerErrorException('Failed to fetch tables data');
+  // Break the projects into chunks of 10
+  const chunks = projects.reduce(
+    (acc: { [key: number]: { id: string }[] }, project: { id: string }, index: number) => {
+      const chunkIndex = Math.floor(index / 10);
+      if (!acc[chunkIndex]) {
+        acc[chunkIndex] = [];
       }
-    }),
+      acc[chunkIndex].push(project);
+      return acc;
+    },
+    [],
   );
+
+  const rlsData = [];
+
+  // Go over the chunks and fetch the data, sleep for 15 seconds between chunks
+  // It is intentionally done this way to avoid rate limiting
+  for (const chunk of chunks) {
+    const chunkRlsData = await Promise.all(
+      chunk.map(async (project: { id: string }) => {
+        try {
+          logs.push({
+            timestamp: new Date(),
+            logGroup: 'rls',
+            logline: `Started processing tables for project ${project.id}`,
+          });
+
+          const data = {
+            query:
+              "SELECT n.nspname AS schema, c.relname AS table_name, c.relrowsecurity AS rls_enabled FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r';",
+          };
+
+          const { data: tablesData } = await axios.post<
+            {
+              table_name: string;
+              schema: string;
+              rls_enabled: boolean;
+            }[]
+          >(`https://api.supabase.com/v1/projects/${project.id}/database/query`, data, {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+          });
+          logs.push({
+            timestamp: new Date(),
+            logGroup: 'rls',
+            logline: `Found ${tablesData.length} tables in project: ${project.id}`,
+          });
+          tablesData.forEach(
+            (table: { table_name: string; schema: string; rls_enabled: boolean }) => {
+              logs.push({
+                timestamp: new Date(),
+                logGroup: 'rls',
+                logline: `Status of RLS for table ${table.table_name} in schema ${table.schema}: ${table.rls_enabled ? 'Enabled' : 'Disabled'}`,
+              });
+            },
+          );
+          return tablesData.map(
+            (table: { table_name: string; schema: string; rls_enabled: boolean }) => ({
+              projectId: project.id,
+              tableName: table.table_name,
+              schema: table.schema,
+              rlsEnabled: table.rls_enabled,
+            }),
+          );
+        } catch (err) {
+          console.error(err);
+          throw new InternalServerErrorException('Failed to fetch tables data');
+        }
+      }),
+    );
+
+    rlsData.push(...chunkRlsData);
+  }
 
   const finalRlsData = rlsData.flat();
 
@@ -148,37 +167,56 @@ export const getPitrData = async (orgId: string, accessToken: string) => {
     logline: `Found ${projects.length} projects in org ${orgId}. Checking point-in-time recovery for each project.`,
   });
 
-  // Sequentially fetch the backup history for each project
-  // It is intentionally done this way to avoid rate limiting
-  const pitrData = await Promise.all(
-    projects.map(async (project: { id: string }) => {
-      try {
-        logs.push({
-          timestamp: new Date(),
-          logGroup: 'pitr',
-          logline: `Checking point-in-time recovery for project: ${project.id}`,
-        });
-
-        const { data: backupData } = await axios.get<{ pitr_enabled: boolean }>(
-          `https://api.supabase.com/v1/projects/${project.id}/database/backups`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
-        );
-        logs.push({
-          timestamp: new Date(),
-          logGroup: 'pitr',
-          logline: `PITR status for the backup in project ${project.id}: ${backupData.pitr_enabled ? 'Enabled' : 'Disabled'}`,
-        });
-        return { projectId: project.id, pitrEnabled: backupData.pitr_enabled };
-      } catch (err) {
-        console.error(err);
-        throw new InternalServerErrorException('Failed to fetch backup history');
+  // Break the projects into chunks of 10
+  const chunks = projects.reduce(
+    (acc: { [key: number]: { id: string }[] }, project: { id: string }, index: number) => {
+      const chunkIndex = Math.floor(index / 10);
+      if (!acc[chunkIndex]) {
+        acc[chunkIndex] = [];
       }
-    }),
+      acc[chunkIndex].push(project);
+      return acc;
+    },
+    [],
   );
+
+  const pitrData = [];
+
+  // Go over the chunks and fetch the data, sleep for 15 seconds between chunks
+  // It is intentionally done this way to avoid rate limiting
+  for (const chunk of chunks) {
+    const chunkPitrData = await Promise.all(
+      chunk.map(async (project: { id: string }) => {
+        try {
+          logs.push({
+            timestamp: new Date(),
+            logGroup: 'pitr',
+            logline: `Checking point-in-time recovery for project: ${project.id}`,
+          });
+
+          const { data: backupData } = await axios.get<{ pitr_enabled: boolean }>(
+            `https://api.supabase.com/v1/projects/${project.id}/database/backups`,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            },
+          );
+          logs.push({
+            timestamp: new Date(),
+            logGroup: 'pitr',
+            logline: `PITR status for the backup in project ${project.id}: ${backupData.pitr_enabled ? 'Enabled' : 'Disabled'}`,
+          });
+          return { projectId: project.id, pitrEnabled: backupData.pitr_enabled };
+        } catch (err) {
+          console.error(err);
+          throw new InternalServerErrorException('Failed to fetch backup history');
+        }
+      }),
+    );
+
+    pitrData.push(...chunkPitrData);
+  }
 
   return {
     total: pitrData.length,

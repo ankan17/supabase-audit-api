@@ -8,6 +8,7 @@ import { errorHandler } from './common/errorHandler';
 import authRoutes from './auth/auth.routes';
 import usersRoutes from './users/users.routes';
 import checksRoutes from './checks/checks.routes';
+import chatRoutes from './chat/chat.routes';
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.use(bodyParser.json());
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', usersRoutes);
 app.use('/api/v1/checks', checksRoutes);
+app.use('/api/v1/chat', chatRoutes);
 
 // Add the error handler after all routes
 app.use(errorHandler);

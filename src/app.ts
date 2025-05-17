@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import { errorHandler } from './common/errorHandler';
 import authRoutes from './auth/auth.routes';
 import usersRoutes from './users/users.routes';
+import checksRoutes from './checks/checks.routes';
 
 dotenv.config();
 
@@ -51,6 +52,7 @@ app.use(bodyParser.json());
 // Add the routes here
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', usersRoutes);
+app.use('/api/v1/checks', checksRoutes);
 
 // Add the error handler after all routes
 app.use(errorHandler);

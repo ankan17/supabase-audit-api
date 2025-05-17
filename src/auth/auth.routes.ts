@@ -16,6 +16,6 @@ router.post('/supabase/callback', supabaseCallbackController);
 
 router.get('/verify', supabaseAuthMiddleware, authVerifyController);
 
-router.get('/logout', supabaseAuthMiddleware, logoutController);
+router.post('/logout', supabaseAuthMiddleware, logoutController);
 
 export default router;

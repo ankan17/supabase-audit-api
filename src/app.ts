@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
+import { errorHandler } from './common/errorHandler';
+import authRoutes from './auth/auth.routes';
+
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
@@ -43,6 +46,12 @@ app.get('/', (req, res) => {
 });
 
 app.use(bodyParser.json());
+
+// Add the routes here
+app.use('/api/v1/auth', authRoutes);
+
+// Add the error handler after all routes
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
